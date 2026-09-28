@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { entryExitApi } from '../../api/entryExitApi';
 import { libraryApi } from '../../api/libraryApi';
@@ -17,10 +17,15 @@ import {
   UserCheck,
   Building2,
   ShieldAlert,
-  QrCode
+  QrCode,
+  ScanLine,
+  Keyboard,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { ThemeSwitcher } from '../../components/common/ThemeSwitcher';
 import { Footer } from '../../components/common/Footer';
+import { IDCardScanner } from '../../components/entrance/IDCardScanner';
 
 const LIBRARIES_LIST = [
   { code: 'KIET_MAIN', name: 'KIET Library' },
@@ -37,11 +42,14 @@ export const LibraryEntrancePage = () => {
   const [errorInfo, setErrorInfo] = useState(null);
   const [recentVisits, setRecentVisits] = useState([]);
   const [libraryStatus, setLibraryStatus] = useState(null);
+  const [showManualEntry, setShowManualEntry] = useState(false);
+  const [scannerDetectedId, setScannerDetectedId] = useState(null);
+  const [scannerLoading, setScannerLoading] = useState(false);
 
   const inputRef = useRef(null);
 
   useEffect(() => {
-    inputRef.current?.focus();
+    // Don't auto-focus the manual input; scanner is primary now
   }, []);
 
   const fetchLibraryData = async (libCode) => {
@@ -86,17 +94,19 @@ export const LibraryEntrancePage = () => {
     };
   }, [selectedLibrary]);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  // Shared gate operation logic — used by both scanner and manual entry
+  const processGateEntry = useCallback(async (targetId) => {
     if (!selectedLibrary) {
-      setErrorInfo({ title: 'Validation Error', message: 'Please select a library.' });
-      return;
+      const errObj = { title: 'Validation Error', message: 'Please select a library.' };
+      setErrorInfo(errObj);
+      return { success: false, error: errObj };
     }
 
-    const trimmedId = userId.trim();
+    const trimmedId = targetId.trim();
     if (!trimmedId) {
-      setErrorInfo({ title: 'Validation Error', message: 'Please enter a User ID.' });
-      return;
+      const errObj = { title: 'Validation Error', message: 'Please enter a User ID.' };
+      setErrorInfo(errObj);
+      return { success: false, error: errObj };
     }
 
     setLoading(true);
@@ -108,24 +118,47 @@ export const LibraryEntrancePage = () => {
       if (res?.data) {
         setResult(res.data);
         setUserId('');
+        setScannerDetectedId(null);
         fetchLibraryData(selectedLibrary);
+        return { success: true, data: res.data };
       }
+      return { success: false, error: { message: 'No response from server' } };
     } catch (err) {
       const errResponse = err.response?.data;
-      setErrorInfo({
-        title: errResponse?.message || 'Check-IN / Check-OUT Rejected',
-        message: errResponse?.errorDetails?.reason || err.message || 'Operation failed',
-        code: errResponse?.errorCode,
+      const errObj = {
+        title: errResponse?.message || err.message || 'Check-IN / Check-OUT Rejected',
+        message: errResponse?.errorDetails?.reason || errResponse?.message || err.message || 'Operation failed',
+        code: errResponse?.errorCode || err.code,
         activeLibraryName: errResponse?.errorDetails?.activeLibraryName,
         userId: trimmedId
-      });
+      };
+      setErrorInfo(errObj);
+      return { success: false, error: errObj };
     } finally {
       setLoading(false);
-      setTimeout(() => inputRef.current?.focus(), 100);
+      setScannerLoading(false);
     }
+  }, [selectedLibrary]);
+
+  // Manual form submit handler (preserved)
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    await processGateEntry(userId);
+    setTimeout(() => inputRef.current?.focus(), 100);
   };
 
+  // Scanner detected a roll number — automatically process gate entry and return result to scanner
+  const handleScannerDetection = useCallback(async (rollNumber) => {
+    setScannerDetectedId(rollNumber);
+    setScannerLoading(true);
+    setResult(null);
+    setErrorInfo(null);
+    return await processGateEntry(rollNumber);
+  }, [processGateEntry]);
+
   const selectedLibObj = LIBRARIES_LIST.find((l) => l.code === selectedLibrary);
+
+  const isLibraryClosed = libraryStatus?.isOpen === false;
 
   return (
     <div className="min-h-screen bg-[#FFF4E9] dark:bg-[#161219] text-[#2B232E] dark:text-[#FFF4E9] transition-colors flex flex-col font-sans">
@@ -184,14 +217,14 @@ export const LibraryEntrancePage = () => {
 
               {libraryStatus && (
                 <Badge
-                  variant={libraryStatus.isOpen === false ? 'destructive' : 'success'}
+                  variant={isLibraryClosed ? 'destructive' : 'success'}
                   className={`text-xs px-2.5 py-1 font-bold uppercase tracking-wider inline-flex items-center gap-1.5 self-start sm:self-auto ${
-                    libraryStatus.isOpen === false ? 'bg-rose-600 text-white' : 'bg-emerald-600 text-white'
+                    isLibraryClosed ? 'bg-rose-600 text-white' : 'bg-emerald-600 text-white'
                   }`}
                 >
                   <Clock className="w-3.5 h-3.5" />
                   <span>
-                    {libraryStatus.isOpen === false
+                    {isLibraryClosed
                       ? 'CLOSED • 09:00 AM - 05:00 PM'
                       : 'OPEN • 09:00 AM - 05:00 PM'}
                   </span>
@@ -201,7 +234,7 @@ export const LibraryEntrancePage = () => {
           </CardHeader>
 
           <CardContent className="p-6 space-y-6">
-            {libraryStatus?.isOpen === false && (
+            {isLibraryClosed && (
               <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 flex items-start gap-2.5 text-amber-900 dark:text-amber-200 text-xs">
                 <Clock className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
                 <div>
@@ -213,76 +246,129 @@ export const LibraryEntrancePage = () => {
               </div>
             )}
 
-            <form onSubmit={handleSubmit} className="space-y-5">
-              <div>
-                <label className="block text-xs font-bold text-[#2B232E] dark:text-[#FFF4E9] uppercase tracking-wider mb-1.5">
-                  Select Library
-                </label>
-                <LibrarySelect
-                  includeAllOption={false}
-                  value={selectedLibrary}
-                  onChange={(e) => {
-                    setSelectedLibrary(e.target.value);
-                    setResult(null);
-                    setErrorInfo(null);
-                    setTimeout(() => inputRef.current?.focus(), 50);
-                  }}
-                  className="font-semibold"
-                />
-              </div>
+            {/* Library Selection */}
+            <div>
+              <label className="block text-xs font-bold text-[#2B232E] dark:text-[#FFF4E9] uppercase tracking-wider mb-1.5">
+                Select Library
+              </label>
+              <LibrarySelect
+                includeAllOption={false}
+                value={selectedLibrary}
+                onChange={(e) => {
+                  setSelectedLibrary(e.target.value);
+                  setResult(null);
+                  setErrorInfo(null);
+                }}
+                className="font-semibold"
+              />
+            </div>
 
-              {libraryStatus && (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 bg-[#E8DBC5]/40 dark:bg-[#2D2534] border border-[#E8DBC5] dark:border-[#3B3142] rounded-xl">
-                  <div>
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-[#7A697E] dark:text-[#B8A6BD]">Library Name</span>
-                    <p className="text-sm font-extrabold text-[#2B232E] dark:text-[#FFF4E9] truncate mt-0.5">{selectedLibObj?.name || 'Library'}</p>
-                  </div>
-                  <div>
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-[#7A697E] dark:text-[#B8A6BD]">Current Occupancy</span>
-                    <p className="text-sm font-extrabold text-[#8D6B94] dark:text-[#B185A7] mt-0.5">{libraryStatus.activeVisits} Visitors</p>
-                  </div>
-                  <div>
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-[#7A697E] dark:text-[#B8A6BD]">Available Seats</span>
-                    <p className="text-sm font-extrabold text-emerald-600 dark:text-emerald-400 mt-0.5">{libraryStatus.availableSeats} Free</p>
-                  </div>
-                  <div>
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-[#7A697E] dark:text-[#B8A6BD]">Total Capacity</span>
-                    <p className="text-sm font-extrabold text-[#2B232E] dark:text-[#FFF4E9] mt-0.5">{libraryStatus.capacity} Seats</p>
-                  </div>
+            {/* Occupancy Status Grid (preserved exactly) */}
+            {libraryStatus && (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 bg-[#E8DBC5]/40 dark:bg-[#2D2534] border border-[#E8DBC5] dark:border-[#3B3142] rounded-xl">
+                <div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#7A697E] dark:text-[#B8A6BD]">Library Name</span>
+                  <p className="text-sm font-extrabold text-[#2B232E] dark:text-[#FFF4E9] truncate mt-0.5">{selectedLibObj?.name || 'Library'}</p>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#7A697E] dark:text-[#B8A6BD]">Current Occupancy</span>
+                  <p className="text-sm font-extrabold text-[#8D6B94] dark:text-[#B185A7] mt-0.5">{libraryStatus.activeVisits} Visitors</p>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#7A697E] dark:text-[#B8A6BD]">Available Seats</span>
+                  <p className="text-sm font-extrabold text-emerald-600 dark:text-emerald-400 mt-0.5">{libraryStatus.availableSeats} Free</p>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#7A697E] dark:text-[#B8A6BD]">Total Capacity</span>
+                  <p className="text-sm font-extrabold text-[#2B232E] dark:text-[#FFF4E9] mt-0.5">{libraryStatus.capacity} Seats</p>
+                </div>
+              </div>
+            )}
+
+            {/* ============================================================ */}
+            {/* PRIMARY METHOD: ID Card Scanner                               */}
+            {/* ============================================================ */}
+            <div className="rounded-xl border-2 border-[#8D6B94]/30 dark:border-[#B185A7]/20 bg-[#FFF4E9]/40 dark:bg-[#1A151E]/60 p-5">
+              <div className="flex items-center gap-2 mb-1">
+                <Badge className="text-[10px] font-extrabold px-2 py-0.5 uppercase tracking-widest bg-[#8D6B94] text-white">
+                  Primary
+                </Badge>
+              </div>
+              <IDCardScanner
+                onRollNumberDetected={handleScannerDetection}
+                disabled={isLibraryClosed || loading}
+              />
+              {/* Show loading state when scanner-detected roll number is being processed */}
+              {scannerLoading && scannerDetectedId && (
+                <div className="mt-3 flex items-center gap-2 text-sm text-[#7A697E] dark:text-[#B8A6BD] font-medium">
+                  <div className="w-4 h-4 border-2 border-[#8D6B94] border-t-transparent rounded-full animate-spin" />
+                  Processing entry/exit for <strong className="font-mono text-[#8D6B94] dark:text-[#B185A7]">{scannerDetectedId}</strong>...
                 </div>
               )}
+            </div>
 
-              <div>
-                <label className="block text-xs font-bold text-[#2B232E] dark:text-[#FFF4E9] uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
-                  <QrCode className="w-4 h-4 text-[#8D6B94] dark:text-[#B185A7]" />
-                  USER ID
-                </label>
-                <div className="flex flex-col sm:flex-row gap-3">
-                  <Input
-                    ref={inputRef}
-                    type="text"
-                    value={userId}
-                    onChange={(e) => setUserId(e.target.value)}
-                    placeholder={libraryStatus?.isOpen === false ? 'LIBRARY CLOSED (09:00 AM - 05:00 PM)' : 'ENTER USER ID'}
-                    className="h-14 text-lg font-mono uppercase font-bold tracking-wider px-4 border-[#E8DBC5] dark:border-[#3B3142] bg-white dark:bg-[#211C26] text-[#2B232E] dark:text-[#FFF4E9] flex-1 focus:ring-[#8D6B94]"
-                    disabled={loading || libraryStatus?.isOpen === false}
-                    autoComplete="off"
-                  />
-                  <Button
-                    type="submit"
-                    size="lg"
-                    isLoading={loading}
-                    disabled={libraryStatus?.isOpen === false}
-                    className="h-14 px-8 bg-[#8D6B94] hover:bg-[#795B80] text-white font-bold text-base shadow-2xs shrink-0 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <ArrowRightCircle className="w-5 h-5 mr-2" />
-                    {libraryStatus?.isOpen === false ? 'Library Closed' : 'Enter / Exit'}
-                  </Button>
+            {/* ============================================================ */}
+            {/* SECONDARY METHOD: Manual Roll Number Entry                    */}
+            {/* ============================================================ */}
+            <div className="rounded-xl border border-[#E8DBC5] dark:border-[#3B3142] bg-white/50 dark:bg-[#211C26]/50 overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setShowManualEntry(!showManualEntry)}
+                className="w-full px-5 py-3 flex items-center justify-between text-left hover:bg-[#E8DBC5]/20 dark:hover:bg-[#2D2534]/40 transition-colors cursor-pointer"
+              >
+                <div className="flex items-center gap-2">
+                  <Keyboard className="w-4 h-4 text-[#7A697E] dark:text-[#B8A6BD]" />
+                  <span className="text-xs font-bold text-[#7A697E] dark:text-[#B8A6BD] uppercase tracking-wider">
+                    Can't scan? Enter Roll Number Manually
+                  </span>
+                  <Badge variant="outline" className="text-[10px] font-semibold px-1.5 py-0 uppercase tracking-wider">
+                    Fallback
+                  </Badge>
                 </div>
-              </div>
-            </form>
+                {showManualEntry ? (
+                  <ChevronUp className="w-4 h-4 text-[#7A697E] dark:text-[#B8A6BD]" />
+                ) : (
+                  <ChevronDown className="w-4 h-4 text-[#7A697E] dark:text-[#B8A6BD]" />
+                )}
+              </button>
 
+              {showManualEntry && (
+                <div className="px-5 pb-4 pt-1 border-t border-[#E8DBC5]/60 dark:border-[#3B3142]">
+                  <form onSubmit={handleSubmit} className="space-y-3">
+                    <div>
+                      <label className="block text-xs font-bold text-[#2B232E] dark:text-[#FFF4E9] uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                        <QrCode className="w-4 h-4 text-[#8D6B94] dark:text-[#B185A7]" />
+                        USER ID
+                      </label>
+                      <div className="flex flex-col sm:flex-row gap-3">
+                        <Input
+                          ref={inputRef}
+                          type="text"
+                          value={userId}
+                          onChange={(e) => setUserId(e.target.value)}
+                          placeholder={isLibraryClosed ? 'LIBRARY CLOSED (09:00 AM - 05:00 PM)' : 'ENTER USER ID'}
+                          className="h-14 text-lg font-mono uppercase font-bold tracking-wider px-4 border-[#E8DBC5] dark:border-[#3B3142] bg-white dark:bg-[#211C26] text-[#2B232E] dark:text-[#FFF4E9] flex-1 focus:ring-[#8D6B94]"
+                          disabled={loading || isLibraryClosed}
+                          autoComplete="off"
+                        />
+                        <Button
+                          type="submit"
+                          size="lg"
+                          isLoading={loading}
+                          disabled={isLibraryClosed}
+                          className="h-14 px-8 bg-[#8D6B94] hover:bg-[#795B80] text-white font-bold text-base shadow-2xs shrink-0 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <ArrowRightCircle className="w-5 h-5 mr-2" />
+                          {isLibraryClosed ? 'Library Closed' : 'Enter / Exit'}
+                        </Button>
+                      </div>
+                    </div>
+                  </form>
+                </div>
+              )}
+            </div>
 
+            {/* Error display (preserved exactly) */}
             {errorInfo && (
               <Alert variant="destructive" className="border-rose-300 dark:border-rose-900/60 bg-rose-50 dark:bg-rose-950/40 text-rose-900 dark:text-rose-200 p-4 rounded-xl">
                 <div className="flex items-start space-x-3">
@@ -305,11 +391,18 @@ export const LibraryEntrancePage = () => {
                     ) : (
                       <p className="text-xs text-rose-700 dark:text-rose-300 font-semibold leading-relaxed">{errorInfo.message}</p>
                     )}
+                    {/* If scan failed, guide user to manual entry */}
+                    {scannerDetectedId && (
+                      <p className="text-xs text-rose-600 dark:text-rose-400 font-medium mt-2">
+                        If the detected Roll Number is incorrect, use the <button type="button" onClick={() => setShowManualEntry(true)} className="underline font-bold cursor-pointer hover:text-rose-800 dark:hover:text-rose-200">manual entry</button> below.
+                      </p>
+                    )}
                   </div>
                 </div>
               </Alert>
             )}
 
+            {/* Result display (preserved exactly from original) */}
             {result && (
               <div
                 className="p-5 rounded-xl border-2 transition-all border-[#8D6B94] bg-[#E8DBC5]/60 dark:bg-[#2D2534] text-[#2B232E] dark:text-[#FFF4E9]"
@@ -373,6 +466,7 @@ export const LibraryEntrancePage = () => {
           </CardContent>
         </Card>
 
+        {/* Recent Gate Logs (preserved exactly from original) */}
         <Card className="border-[#E8DBC5] dark:border-[#3B3142] shadow-sm bg-white dark:bg-[#211C26]">
           <CardHeader className="py-4 border-b border-[#E8DBC5]/60 dark:border-[#3B3142] flex flex-row items-center justify-between">
             <CardTitle className="text-sm font-bold text-[#2B232E] dark:text-[#FFF4E9] flex items-center gap-2">
