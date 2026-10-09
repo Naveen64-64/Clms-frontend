@@ -22,6 +22,7 @@ import { StudentCatalog } from './pages/student/StudentCatalog';
 import { StudentHistory } from './pages/student/StudentHistory';
 import { StudentFines } from './pages/student/StudentFines';
 import { StudentNotifications } from './pages/student/StudentNotifications';
+import { StudentTcClearance } from './pages/student/StudentTcClearance';
 
 // Faculty Pages
 import { FacultyDashboard } from './pages/faculty/FacultyDashboard';
@@ -98,6 +99,7 @@ export default function App() {
                   <Route path="/student/deposit" element={<Navigate to="/student/fines" replace />} />
                   <Route path="/student/waitlist" element={<Navigate to="/student/dashboard" replace />} />
                   <Route path="/student/notifications" element={<StudentNotifications />} />
+                  <Route path="/student/tc-clearance" element={<StudentTcClearance />} />
                 </Route>
 
                 {/* Faculty Portal Routes */}

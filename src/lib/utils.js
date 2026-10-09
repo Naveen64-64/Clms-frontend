@@ -54,3 +54,40 @@ export function getStudentAssignedLibrary(studentOrRoll) {
 
   return 'KIET Library';
 }
+
+/**
+ * Safely formats a date for certificates, official forms, and UI tables.
+ * Returns a fallback (default '—') if the input is null, undefined, invalid, or unparseable.
+ * Guarantees valid date options are passed to Date.prototype.toLocaleDateString.
+ *
+ * @param {string | number | Date | null | undefined} value - Date value to format
+ * @param {string} [fallback='—'] - Graceful fallback string if date is missing or invalid
+ * @returns {string} - Formatted date string (DD/MM/YYYY in en-IN) or fallback
+ */
+export function formatCertificateDate(value, fallback = '—') {
+  if (!value) return fallback;
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return fallback;
+  }
+
+  try {
+    return date.toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+  } catch {
+    return fallback;
+  }
+}
+
+/**
+ * Alias for formatCertificateDate for general date display across the application.
+ */
+export function formatDate(value, fallback = '—') {
+  return formatCertificateDate(value, fallback);
+}
+

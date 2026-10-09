@@ -94,6 +94,7 @@ export const Sidebar = ({ isOpen, onClose }) => {
     { name: 'Search Catalog', path: '/student/books', aliases: ['/student/catalog'], icon: BookOpen },
     { name: 'Borrowing History', path: '/student/history', aliases: ['/student/current-books'], icon: BookMarked },
     { name: 'My Fines', path: '/student/fines', icon: DollarSign },
+    { name: 'No Due / TC Clearance', path: '/student/tc-clearance', icon: ClipboardCheck },
     { name: 'Notifications', path: '/student/notifications', icon: Bell },
     { name: 'My Profile', path: '/student/profile', icon: User },
   ];

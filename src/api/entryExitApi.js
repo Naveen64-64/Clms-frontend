@@ -5,6 +5,8 @@ export const entryExitApi = {
     apiClient.post('/entry-exit/gate', { userId, rollNumber: userId, userIdentifier: userId, libraryId, action }),
   scanRollNumber: (rollNumber, libraryId, action) =>
     apiClient.post('/entry-exit/gate', { rollNumber, userId: rollNumber, userIdentifier: rollNumber, libraryId, action }),
+  verifyCandidates: (candidates, libraryId, action) =>
+    apiClient.post('/library-entrance/verify', { candidates, libraryId, action }),
   toggleGate: (data) => apiClient.post('/entry-exit/gate', data),
   getActiveVisits: (libraryId) => {
     const cleanId = typeof libraryId === 'object' && libraryId !== null ? libraryId._id || libraryId.code : libraryId;
@@ -13,7 +15,7 @@ export const entryExitApi = {
     }
     return apiClient.get('/entry-exit/active');
   },
-  getRecentVisits: (libraryId) => apiClient.get(`/entry-exit/recent/${libraryId}`),
+  getRecentVisits: (libraryId, limit = 20) => apiClient.get(`/entry-exit/recent/${libraryId}?limit=${limit}`),
 };
 
 export const scanUserId = entryExitApi.scanUserId;

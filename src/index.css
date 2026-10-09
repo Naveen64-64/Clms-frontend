@@ -258,13 +258,53 @@ html.dark ::-webkit-scrollbar-thumb:hover {
 
 /* Print Styles for Certificate & Clearances */
 @media print {
+  html,
   body {
+    background: #FFFFFF !important;
     background-color: #FFFFFF !important;
     color: #000000 !important;
+    overflow: visible !important;
+    height: auto !important;
+    min-height: 100% !important;
   }
 
-  .no-print {
+  #root,
+  .relative.h-screen {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  #portal-main-scroll {
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+  }
+
+  /* Hide app navigation, chrome, and screen-only controls during print */
+  aside,
+  header,
+  nav,
+  footer,
+  .ambient-glows,
+  .no-print,
+  .print\:hidden {
     display: none !important;
+  }
+
+  /* Reset modal overlay containers so the document prints cleanly in normal page flow */
+  .fixed.inset-0 {
+    position: static !important;
+    background: transparent !important;
+    background-color: transparent !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+  }
+
+  @page {
+    size: A4 portrait;
+    margin: 8mm 10mm;
   }
 }
 
